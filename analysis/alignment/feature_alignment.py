@@ -48,6 +48,8 @@ from msproteomicstoolslib.algorithms.alignment.AlignmentAlgorithm import Alignme
 from msproteomicstoolslib.algorithms.alignment.AlignmentHelper import write_out_matrix_file
 from msproteomicstoolslib.algorithms.alignment.SplineAligner import SplineAligner
 
+from MinimumSpanningTree import MinimumSpanningTree
+
 class Experiment(MRExperiment):
     """
     An Experiment is a container for multiple experimental runs - some of which may contain the same precursors.
@@ -482,7 +484,7 @@ class ParamEst(object):
         decoy_frac = alldecoypg_cnt *1.0 / allpg_cnt
         return decoy_frac
 
-def computeOptimalOrder(exp, multipeptides):
+def getMinimalSpanningTree(exp, multipeptides):
     import scipy.cluster.hierarchy
 
     dist_matrix = numpy.zeros(shape=(len(exp.runs),len(exp.runs)))
@@ -499,25 +501,10 @@ def computeOptimalOrder(exp, multipeptides):
 
             dist_matrix[i,j] = stdev_lin
 
+    return MinimumSpanningTree(dist_matrix)
 
-    # Clustering:
-    # Use single linkage here since we are interested in the closest possible
-    # link from one run to the next.
-    Z = scipy.cluster.hierarchy.single(dist_matrix)
-
-    def resolveClusterMember(Z, n):
-        cluster_members = [[m] for m in list(range(n))]
-        for row in Z:
-            r = []
-            for node in cluster_members[ int(row[0]) ]:
-                r.extend(cluster_members[node])
-            for node in cluster_members[ int(row[1]) ]:
-                r.extend(cluster_members[node])
-            cluster_members.append( r )
-        return cluster_members
-
-    n = len(exp.runs)
-    cluster_members = resolveClusterMember(Z,n)
+def computeOptimalOrder(exp, multipeptides):
+    tree = getMinimalSpanningTree(exp, multipeptides)
 
 def handle_args():
     usage = "" #usage: %prog --in \"files1 file2 file3 ...\" [options]" 

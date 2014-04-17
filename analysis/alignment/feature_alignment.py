@@ -505,14 +505,17 @@ class ParamEst(object):
         decoy_frac = alldecoypg_cnt *1.0 / allpg_cnt
         return decoy_frac
 
-def getMinimalSpanningTree(exp, multipeptides):
+def getMinimalSpanningTree(exp, multipeptides, initial_alignment_cutoff):
     import scipy.cluster.hierarchy
 
+    spl_aligner = SplineAligner(initial_alignment_cutoff)
     dist_matrix = numpy.zeros(shape=(len(exp.runs),len(exp.runs)))
     for i in range(len(exp.runs)):
         for j in range(len(exp.runs)):
+            if i == j:
+                dist_matrix[i,j] = 0
+                continue 
 
-            spl_aligner = SplineAligner()
             idata, jdata = spl_aligner._getRTData(exp.runs[i], exp.runs[j], multipeptides)
 
             smlin = smoothing.SmoothingLinear()

@@ -482,6 +482,43 @@ class ParamEst(object):
         decoy_frac = alldecoypg_cnt *1.0 / allpg_cnt
         return decoy_frac
 
+def computeOptimalOrder(exp, multipeptides):
+    import scipy.cluster.hierarchy
+
+    dist_matrix = numpy.zeros(shape=(len(exp.runs),len(exp.runs)))
+    for i in range(len(exp.runs)):
+        for j in range(len(exp.runs)):
+
+            spl_aligner = SplineAligner()
+            idata, jdata = spl_aligner._getRTData(exp.runs[i], exp.runs[j], multipeptides)
+
+            smlin = smoothing.SmoothingLinear()
+            smlin.initialize(idata, jdata)
+            idata_lin_aligned = smlin.predict(idata)
+            stdev_lin = numpy.std(numpy.array(jdata) - numpy.array(idata_lin_aligned))
+
+            dist_matrix[i,j] = stdev_lin
+
+
+    # Clustering:
+    # Use single linkage here since we are interested in the closest possible
+    # link from one run to the next.
+    Z = scipy.cluster.hierarchy.single(dist_matrix)
+
+    def resolveClusterMember(Z, n):
+        cluster_members = [[m] for m in list(range(n))]
+        for row in Z:
+            r = []
+            for node in cluster_members[ int(row[0]) ]:
+                r.extend(cluster_members[node])
+            for node in cluster_members[ int(row[1]) ]:
+                r.extend(cluster_members[node])
+            cluster_members.append( r )
+        return cluster_members
+
+    n = len(exp.runs)
+    cluster_members = resolveClusterMember(Z,n)
+
 def handle_args():
     usage = "" #usage: %prog --in \"files1 file2 file3 ...\" [options]" 
     usage += "\nThis program will select all peakgroups below the FDR cutoff in all files and try to align them to each other."
@@ -602,6 +639,8 @@ def main(options):
         print "For the aligned values, use a cutoff of %0.4f%%" % (options.aligned_fdr_cutoff*100)
         print("Parameter estimation took %ss" % (time.time() - start) )
         print "-"*35
+
+    computeOptimalOrder(this_exp, multipeptides)
 
     # If we want to align runs
     if options.realign_method != "diRT":

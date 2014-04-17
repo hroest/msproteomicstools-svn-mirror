@@ -291,6 +291,28 @@ class Experiment(MRExperiment):
                 myYaml["RawData"].append(this)
             open(yaml_outfile, 'w').write(yaml.dump({"AlignedSwathRuns" : myYaml}))
 
+class TransformationData:
+
+    def __init__(self):
+        self.data = {} 
+
+    def addData(self, run1, data1, run2, data2, doSort=True):
+      # Add data from run1 -> run2 and also run2 -> run1
+      self._doAddData(run1, data1, run2, data2, doSort)
+      self._doAddData(run2, data2, run1, data1, doSort)
+
+    def _doAddData(self, run1, data1, run2, data2, doSort):
+      if doSort:
+          data1, data2 = zip(*sorted(zip(data1, data2)))
+      data1 = numpy.array(data1)
+      data2 = numpy.array(data2)
+      d = self.data.get(run1, {})
+      d[run2] = (data1,data2)
+      self.data[run1] = d
+
+    def getData(self, run1, run2):
+        return self.data[run1][run2]
+
 
 # Detect outliers in "good" groups
 def detect_outliers(multipeptides, aligned_fdr_cutoff, outlier_threshold_seconds):

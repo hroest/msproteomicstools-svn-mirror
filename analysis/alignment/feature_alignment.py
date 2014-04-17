@@ -48,6 +48,7 @@ from msproteomicstoolslib.algorithms.alignment.AlignmentAlgorithm import Alignme
 from msproteomicstoolslib.algorithms.alignment.AlignmentHelper import write_out_matrix_file
 from msproteomicstoolslib.algorithms.alignment.SplineAligner import SplineAligner
 from msproteomicstoolslib.algorithms.PADS.MinimumSpanningTree import MinimumSpanningTree
+from msproteomicstoolslib.algorithms.shared.bounds import lower_bound, upper_bound
 
 class Experiment(MRExperiment):
     """
@@ -522,13 +523,140 @@ def getMinimalSpanningTree(exp, multipeptides, initial_alignment_cutoff):
             smlin.initialize(idata, jdata)
             idata_lin_aligned = smlin.predict(idata)
             stdev_lin = numpy.std(numpy.array(jdata) - numpy.array(idata_lin_aligned))
+            stdev_median = numpy.median(numpy.array(jdata) - numpy.array(idata_lin_aligned))
 
+            A = numpy.array([ numpy.array(idata), numpy.ones(len(idata))])
+            w = numpy.linalg.lstsq(A.T,numpy.array(jdata))
+
+            smspl = smoothing.UnivarSplineCV()
+            smspl.initialize(idata, jdata)
+
+            realdiff = numpy.mean(numpy.array(idata) - numpy.array(jdata))
+            shift_d = numpy.array(idata) - numpy.array(jdata) - realdiff 
+
+            # print i,j, stdev_lin , stdev_median, "spl", smspl.stdev, abs(realdiff), numpy.mean(shift_d), numpy.std(shift_d)
+            # print w
             dist_matrix[i,j] = stdev_lin
+            # dist_matrix[i,j] = smspl.stdev
+            # dist_matrix[i,j] = abs(realdiff)
+            # dist_matrix[i,j] = numpy.std(shift_d)
 
+    #print dist_matrix
     return MinimumSpanningTree(dist_matrix)
 
-def computeOptimalOrder(exp, multipeptides):
-    tree = getMinimalSpanningTree(exp, multipeptides)
+class TreeConsensusAlignment():
+    def __init__(self):
+        pass
+
+    def align(self, exp, multipeptides, tree, tr_data, max_rt_diff):
+
+        verb = False
+        for m in multipeptides:
+
+            # Find the overall best peptide
+            best = m.find_best_peptide_pg()
+            best_rt = best.get_normalized_retentiontime()
+            if verb: 
+                print "00000000000000000000000000000000000 new peptide (cluster)", m.get_peptides()[0].get_id()
+                print " Best", best.print_out(), "from run", best.peptide.run.get_id()
+
+            # Keep track of which nodes we have already visited in the graph
+            # (also storing the rt at which we found the signal in this run).
+            visited = { best.peptide.run.get_id() : best_rt } 
+
+            while len(visited.keys()) != m.get_nr_runs():
+                for e1, e2 in tree:
+                    if e1 in visited.keys() and not e2 in visited.keys():
+                        newPG, rt = self._findBestPG(m, e1, e2, tr_data, visited[e1], max_rt_diff)
+                        visited[e2] = rt
+                    if e2 in visited.keys() and not e1 in visited.keys():
+                        newPG, rt = self._findBestPG(m, e2, e1, tr_data, visited[e2], max_rt_diff)
+                        visited[e1] = rt
+
+    def _findBestPG(self, m,  e1, e2, tr_data, best_rt, max_rt_diff):
+
+        lb = abs(lower_bound( tr_data.getData(e1, e2)[0], best_rt))-1
+        if lb-3 < 0:
+            lb = 3
+
+        source_d = tr_data.getData(e1, e2)[0][lb-3:lb+3]
+        target_d = tr_data.getData(e1, e2)[1][lb-3:lb+3]
+        # print "Has peptides", m.has_peptide(e2)
+        # print "Has peptides", m._peptides.keys()
+
+        # #print , "best_rt", tr_data.getData(e1, e2)[0][best_rt]
+        # print "searching for", best_rt, "got", lb
+        # print "best_rt", source_d
+        # print "best_rt", target_d
+
+        source_d_diff = [s - best_rt for s in source_d]
+        target_transf = [t - s for t,s in zip(target_d, source_d_diff)]
+
+        # print source_d_diff
+        # print target_transf
+        # sm = smoothing.getSmoothingObj(smoother = "lowess")
+        # sm.initialize(tr_data.getData(e1, e2)[0], tr_data.getData(e1, e2)[1])
+        # lowess_prediction = sm.predict( [best_rt] )
+        #print "nr data points:", len(tr_data.getData(e1, e2)[0])
+
+        expected_rt = numpy.average(target_transf, weights=[ 1/abs(s) if s != 0.0 else 0.1 for s in source_d_diff])
+        #print "  Diff pred", expected_rt, " std ", numpy.std(target_transf),  " : diff : ", numpy.average(target_transf) - expected_rt, lowess_prediction[0] - expected_rt , "--", lowess_prediction[0]
+
+        # If there is no peptide present in the target run, we simply return
+        # the expected retention time.
+        if not m.has_peptide(e2):
+            return None, expected_rt
+
+        # Select matching peakgroups from the target run (within the user-defined maximal rt deviation)
+        target_p = m.get_peptide(e2)
+        matching_peakgroups = [pg_ for pg_ in target_p.get_all_peakgroups() 
+            if (abs(float(pg_.get_normalized_retentiontime()) - float(expected_rt)) < max_rt_diff)]
+
+        # If there are no peak groups present in the target run, we simply
+        # return the expected retention time.
+        if len(matching_peakgroups) == 0:
+            return None, expected_rt
+
+        # Select best scoring peakgroup among those in the matching RT window
+        bestScoringPG = min(matching_peakgroups, key=lambda x: float(x.get_fdr_score()))
+        # closestPG = min(matching_peakgroups, key=lambda x: abs(float(x.get_normalized_retentiontime()) - expected_rt))
+        # print "  closest:", closestPG.print_out(), "diff", abs(closestPG.get_normalized_retentiontime() - expected_rt)
+        # print "  bestScoring:", bestScoringPG.print_out(), "diff", abs(bestScoringPG.get_normalized_retentiontime() - expected_rt)
+        return bestScoringPG, expected_rt
+
+def computeOptimalOrder(exp, multipeptides, max_rt_diff, initial_alignment_cutoff):
+    tree = getMinimalSpanningTree(exp, multipeptides, initial_alignment_cutoff)
+
+    spl_aligner = SplineAligner(initial_alignment_cutoff)
+    tr_data = TransformationData()
+
+    # Get alignments
+    for edge in tree:
+        data_0, data_1 = spl_aligner._getRTData(exp.runs[edge[0]], exp.runs[edge[1]], multipeptides)
+        tr_data.addData(exp.runs[edge[0]].get_id(), data_0, exp.runs[edge[1]].get_id(), data_1)
+
+    tree_mapped = [ (exp.runs[a].get_id(), exp.runs[b].get_id()) for a,b in tree]
+
+    # Perform work
+    TreeConsensusAlignment().align(exp, multipeptides, tree_mapped, tr_data, max_rt_diff)
+
+    return
+
+    print tr_data.getData("0_0", "0_1")[0][:20]
+    print tr_data.getData("0_0", "0_1")[1][:20]
+
+    print tr_data.getData("0_1", "0_0")[0][:20]
+    print tr_data.getData("0_1", "0_0")[1][:20]
+
+    lb = abs(lower_bound( tr_data.getData("0_0", "0_1")[0], 500))
+    print "lb", lb, tr_data.getData("0_0", "0_1")[0][lb-1]
+    lb = abs(lower_bound( tr_data.getData("0_0", "0_1")[1], 500))
+    print "lb", lb, tr_data.getData("0_0", "0_1")[1][lb-1]
+
+    lb = abs(upper_bound( tr_data.getData("0_0", "0_1")[0], 500))
+    print "ub", lb, tr_data.getData("0_0", "0_1")[0][lb-1]
+    lb = abs(upper_bound( tr_data.getData("0_0", "0_1")[1], 500))
+    print "ub", lb, tr_data.getData("0_0", "0_1")[1][lb-1]
 
 def handle_args():
     usage = "" #usage: %prog --in \"files1 file2 file3 ...\" [options]" 

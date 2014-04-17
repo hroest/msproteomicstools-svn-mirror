@@ -545,10 +545,11 @@ def getMinimalSpanningTree(exp, multipeptides, initial_alignment_cutoff):
     return MinimumSpanningTree(dist_matrix)
 
 class TreeConsensusAlignment():
-    def __init__(self):
-        pass
 
-    def align(self, exp, multipeptides, tree, tr_data, max_rt_diff):
+    def __init__(self, max_rt_diff):
+        self._max_rt_diff = max_rt_diff
+
+    def align(self, exp, multipeptides, tree, tr_data):
 
         verb = False
         for m in multipeptides:
@@ -567,50 +568,58 @@ class TreeConsensusAlignment():
             while len(visited.keys()) != m.get_nr_runs():
                 for e1, e2 in tree:
                     if e1 in visited.keys() and not e2 in visited.keys():
-                        newPG, rt = self._findBestPG(m, e1, e2, tr_data, visited[e1], max_rt_diff)
+                        newPG, rt = self._findBestPG(m, e1, e2, tr_data, visited[e1])
                         visited[e2] = rt
                     if e2 in visited.keys() and not e1 in visited.keys():
-                        newPG, rt = self._findBestPG(m, e2, e1, tr_data, visited[e2], max_rt_diff)
+                        newPG, rt = self._findBestPG(m, e2, e1, tr_data, visited[e2])
                         visited[e1] = rt
 
-    def _findBestPG(self, m,  e1, e2, tr_data, best_rt, max_rt_diff):
+    def _extractMatchingRTs(self, tr_data, source, target, source_rt, topN):
+        
+        # This lower bound will actually get the element that is just larger
+        # than the search parameter
+        lb = abs(lower_bound( tr_data.getData(source, target)[0], source_rt))-1
+        if lb - topN < 0:
+            lb = topN
 
-        lb = abs(lower_bound( tr_data.getData(e1, e2)[0], best_rt))-1
-        if lb-3 < 0:
-            lb = 3
+        source_d = tr_data.getData(source, target)[0][lb-topN:lb+topN]
+        target_d = tr_data.getData(source, target)[1][lb-topN:lb+topN]
 
-        source_d = tr_data.getData(e1, e2)[0][lb-3:lb+3]
-        target_d = tr_data.getData(e1, e2)[1][lb-3:lb+3]
-        # print "Has peptides", m.has_peptide(e2)
-        # print "Has peptides", m._peptides.keys()
+        return source_d, target_d
 
-        # #print , "best_rt", tr_data.getData(e1, e2)[0][best_rt]
-        # print "searching for", best_rt, "got", lb
-        # print "best_rt", source_d
-        # print "best_rt", target_d
+    def _findBestPG(self, m,  source, target, tr_data, source_rt):
 
-        source_d_diff = [s - best_rt for s in source_d]
-        target_transf = [t - s for t,s in zip(target_d, source_d_diff)]
+        # Extract matching pairs of <sourceRT,targetRT> for local estimation of
+        # retention time shift.
+        # If there are not enough values (less than 3), then use the closest 6
+        # values around the target RT.
+        zipped = [(s,t) for s,t in zip(tr_data.getData(source, target)[0], tr_data.getData(source, target)[1]) 
+                  if abs(s-source_rt) < self._max_rt_diff]
+        if len(zipped) < 3:
+            source_d, target_d = self._extractMatchingRTs(tr_data, source, target, source_rt, 3)
+        else:
+            source_d, target_d = zip(*zipped)
 
-        # print source_d_diff
-        # print target_transf
-        # sm = smoothing.getSmoothingObj(smoother = "lowess")
-        # sm.initialize(tr_data.getData(e1, e2)[0], tr_data.getData(e1, e2)[1])
-        # lowess_prediction = sm.predict( [best_rt] )
-        #print "nr data points:", len(tr_data.getData(e1, e2)[0])
+        # Transform target data:
+        #   Compute a difference array from the source and apply it to the target
+        #   (local linear differences)
+        source_d_diff = [s - source_rt for s in source_d]
+        target_data_transf = [t - s for t,s in zip(target_d, source_d_diff)]
 
-        expected_rt = numpy.average(target_transf, weights=[ 1/abs(s) if s != 0.0 else 0.1 for s in source_d_diff])
-        #print "  Diff pred", expected_rt, " std ", numpy.std(target_transf),  " : diff : ", numpy.average(target_transf) - expected_rt, lowess_prediction[0] - expected_rt , "--", lowess_prediction[0]
+        # Use transformed target data to compute expected RT in target domain (weighted average)
+        expected_rt = numpy.average(target_data_transf, weights=[ 1/abs(s) if s != 0.0 else 0.1 for s in source_d_diff])
+        # print "  Diff pred", expected_rt, " std ", numpy.std(target_data_transf), \
+        #        " : diff : ", numpy.average(target_data_transf) - expected_rt
 
         # If there is no peptide present in the target run, we simply return
         # the expected retention time.
-        if not m.has_peptide(e2):
+        if not m.has_peptide(target):
             return None, expected_rt
 
         # Select matching peakgroups from the target run (within the user-defined maximal rt deviation)
-        target_p = m.get_peptide(e2)
+        target_p = m.get_peptide(target)
         matching_peakgroups = [pg_ for pg_ in target_p.get_all_peakgroups() 
-            if (abs(float(pg_.get_normalized_retentiontime()) - float(expected_rt)) < max_rt_diff)]
+            if (abs(float(pg_.get_normalized_retentiontime()) - float(expected_rt)) < self._max_rt_diff)]
 
         # If there are no peak groups present in the target run, we simply
         # return the expected retention time.
@@ -622,6 +631,7 @@ class TreeConsensusAlignment():
         # closestPG = min(matching_peakgroups, key=lambda x: abs(float(x.get_normalized_retentiontime()) - expected_rt))
         # print "  closest:", closestPG.print_out(), "diff", abs(closestPG.get_normalized_retentiontime() - expected_rt)
         # print "  bestScoring:", bestScoringPG.print_out(), "diff", abs(bestScoringPG.get_normalized_retentiontime() - expected_rt)
+        # print
         return bestScoringPG, expected_rt
 
 def computeOptimalOrder(exp, multipeptides, max_rt_diff, initial_alignment_cutoff):
@@ -638,7 +648,7 @@ def computeOptimalOrder(exp, multipeptides, max_rt_diff, initial_alignment_cutof
     tree_mapped = [ (exp.runs[a].get_id(), exp.runs[b].get_id()) for a,b in tree]
 
     # Perform work
-    TreeConsensusAlignment().align(exp, multipeptides, tree_mapped, tr_data, max_rt_diff)
+    TreeConsensusAlignment(max_rt_diff).align(exp, multipeptides, tree_mapped, tr_data)
 
     return
 

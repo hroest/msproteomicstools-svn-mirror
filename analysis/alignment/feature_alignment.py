@@ -626,8 +626,6 @@ def main(options):
         print("Parameter estimation took %ss" % (time.time() - start) )
         print "-"*35
 
-    computeOptimalOrder(this_exp, multipeptides)
-
     # If we want to align runs
     if options.realign_method != "diRT":
         start = time.time()

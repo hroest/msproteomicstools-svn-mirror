@@ -600,10 +600,11 @@ def computeOptimalOrder(exp, multipeptides, max_rt_diff, initial_alignment_cutof
         data_0, data_1 = spl_aligner._getRTData(exp.runs[edge[0]], exp.runs[edge[1]], multipeptides)
         tr_data.addData(id_0, data_0, exp.runs[edge[1]].get_id(), data_1)
         # Smoothers
-        sm_0_1 = smoothing.SmoothingLocalWeightedInterpolation()
-        sm_1_0 = smoothing.SmoothingLocalWeightedInterpolation()
-        sm_0_1.initialize(data_0, data_1, 3, max_rt_diff)
-        sm_1_0.initialize(data_1, data_0, 3, max_rt_diff)
+        sm_0_1 = smoothing.WeightedNearestNeighbour(3, max_rt_diff, 0.1, False)
+        sm_1_0 = smoothing.WeightedNearestNeighbour(3, max_rt_diff, 0.1, False)
+
+        sm_0_1.initialize(data_0, data_1)
+        sm_1_0.initialize(data_1, data_0)
         tr_data.addTrafo(id_0, id_1, sm_0_1)
         tr_data.addTrafo(id_1, id_0, sm_1_0)
 

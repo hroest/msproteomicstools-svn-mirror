@@ -156,7 +156,7 @@ class AlignmentAlgorithm():
 
     def align_features_cluster_(self, m, a, rt_diff_cutoff, fdr_cutoff, aligned_fdr_cutoff, method):
         verb=self.verbose
-        if verb: print "00000000000000000000000000000000000 new peptide ", m.get_peptides()[0].sequence
+        if verb: print "00000000000000000000000000000000000 new peptide (cluster)", m.get_peptides()[0].get_id()
 
         # i) get all RTs above the cutoff
         for p in m.get_peptides(): # loop over runs
@@ -219,7 +219,7 @@ class AlignmentAlgorithm():
 
     def align_features_best_(self, m, a, rt_diff_cutoff, fdr_cutoff, aligned_fdr_cutoff, method):
         verb=self.verbose
-        if verb: print "00000000000000000000000000000000000 new peptide (best overall)", m.get_peptides()[0].sequence
+        if verb: print "00000000000000000000000000000000000 new peptide (best overall)", m.get_peptides()[0].get_id()
 
         # If we just choose the cluster with the "best" peptide, we find find the best peptide over all runs
         best = m.find_best_peptide_pg()

@@ -138,7 +138,7 @@ class TestUnitSmoothing(unittest.TestCase):
 
     def test_smooth_spline_scipy_uni(self):
         """Test the univariate spline using scipy"""
-        sm = smoothing.SmoothingPyUni()
+        sm = smoothing.UnivarSplineNoCV()
         sm.initialize(self.data1, self.data2)
         r = sm.predict(self.data1)
         self.assertEqual(len(r), 8)

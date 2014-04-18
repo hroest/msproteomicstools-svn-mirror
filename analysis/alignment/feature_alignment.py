@@ -488,7 +488,7 @@ class ParamEst(object):
         decoy_frac = alldecoypg_cnt *1.0 / allpg_cnt
         return decoy_frac
 
-def getMinimalSpanningTree(exp, multipeptides, initial_alignment_cutoff):
+def getMinimumSpanningTree(exp, multipeptides, initial_alignment_cutoff):
     import scipy.cluster.hierarchy
 
     spl_aligner = SplineAligner(initial_alignment_cutoff)
@@ -501,29 +501,15 @@ def getMinimalSpanningTree(exp, multipeptides, initial_alignment_cutoff):
 
             idata, jdata = spl_aligner._getRTData(exp.runs[i], exp.runs[j], multipeptides)
 
+            # Get linear alignment
             smlin = smoothing.SmoothingLinear()
             smlin.initialize(idata, jdata)
             idata_lin_aligned = smlin.predict(idata)
+
+            # Use stdev to estimate distance between two runs
             stdev_lin = numpy.std(numpy.array(jdata) - numpy.array(idata_lin_aligned))
-            stdev_median = numpy.median(numpy.array(jdata) - numpy.array(idata_lin_aligned))
-
-            A = numpy.array([ numpy.array(idata), numpy.ones(len(idata))])
-            w = numpy.linalg.lstsq(A.T,numpy.array(jdata))
-
-            smspl = smoothing.UnivarSplineCV()
-            smspl.initialize(idata, jdata)
-
-            realdiff = numpy.mean(numpy.array(idata) - numpy.array(jdata))
-            shift_d = numpy.array(idata) - numpy.array(jdata) - realdiff 
-
-            # print i,j, stdev_lin , stdev_median, "spl", smspl.stdev, abs(realdiff), numpy.mean(shift_d), numpy.std(shift_d)
-            # print w
             dist_matrix[i,j] = stdev_lin
-            # dist_matrix[i,j] = smspl.stdev
-            # dist_matrix[i,j] = abs(realdiff)
-            # dist_matrix[i,j] = numpy.std(shift_d)
 
-    #print dist_matrix
     return MinimumSpanningTree(dist_matrix)
 
 class TreeConsensusAlignment():
@@ -627,28 +613,11 @@ def computeOptimalOrder(exp, multipeptides, max_rt_diff, initial_alignment_cutof
         data_0, data_1 = spl_aligner._getRTData(exp.runs[edge[0]], exp.runs[edge[1]], multipeptides)
         tr_data.addData(exp.runs[edge[0]].get_id(), data_0, exp.runs[edge[1]].get_id(), data_1)
 
+    print "Got Alignment"
     tree_mapped = [ (exp.runs[a].get_id(), exp.runs[b].get_id()) for a,b in tree]
 
     # Perform work
     TreeConsensusAlignment(max_rt_diff).align(exp, multipeptides, tree_mapped, tr_data)
-
-    return
-
-    print tr_data.getData("0_0", "0_1")[0][:20]
-    print tr_data.getData("0_0", "0_1")[1][:20]
-
-    print tr_data.getData("0_1", "0_0")[0][:20]
-    print tr_data.getData("0_1", "0_0")[1][:20]
-
-    lb = abs(lower_bound( tr_data.getData("0_0", "0_1")[0], 500))
-    print "lb", lb, tr_data.getData("0_0", "0_1")[0][lb-1]
-    lb = abs(lower_bound( tr_data.getData("0_0", "0_1")[1], 500))
-    print "lb", lb, tr_data.getData("0_0", "0_1")[1][lb-1]
-
-    lb = abs(upper_bound( tr_data.getData("0_0", "0_1")[0], 500))
-    print "ub", lb, tr_data.getData("0_0", "0_1")[0][lb-1]
-    lb = abs(upper_bound( tr_data.getData("0_0", "0_1")[1], 500))
-    print "ub", lb, tr_data.getData("0_0", "0_1")[1][lb-1]
 
 def handle_args():
     usage = "" #usage: %prog --in \"files1 file2 file3 ...\" [options]" 

@@ -39,8 +39,10 @@ import os, sys, csv, time
 import numpy
 import argparse
 from msproteomicstoolslib.format.SWATHScoringReader import *
-from msproteomicstoolslib.algorithms.alignment.AlignmentHelper import write_out_matrix_file
 import msproteomicstoolslib.format.TransformationCollection as transformations
+from msproteomicstoolslib.algorithms.alignment.SplineAligner import SplineAligner
+from msproteomicstoolslib.algorithms.alignment.AlignmentMST import getDistanceMatrix
+from msproteomicstoolslib.algorithms.alignment.AlignmentHelper import write_out_matrix_file
 import msproteomicstoolslib.math.Smoothing as smoothing
 from feature_alignment import Experiment
 
@@ -186,6 +188,78 @@ class SwathChromatogramCollection(object):
     def get_runids(self):
         return self.allruns.keys()
 
+def runSingleFileImputation(options, peakgroups_file, mzML_file):
+    """Impute values across chromatograms
+
+    Args:
+        peakgroups_file(filename): CSV file containing all peakgroups
+        mzML_file(filename): mzML file containing chromatograms
+    Returns:
+        A tuple of:
+            new_exp(AlignmentExperiment): experiment containing the aligned peakgroups
+            multipeptides(list(AlignmentHelper.Multipeptide)): list of multipeptides
+
+    This function will read the csv file with all peakgroups as well as the
+    provided chromatogram file (.chrom.mzML). It will then try to impute
+    missing values for those peakgroups where no values is currently present,
+    reading the raw chromatograms.
+    """
+
+    fdr_cutoff_all_pg = 1.0
+    start = time.time()
+    reader = SWATHScoringReader.newReader([peakgroups_file], options.file_format, readmethod="complete")
+    new_exp = Experiment()
+    new_exp.runs = reader.parse_files()
+    multipeptides = new_exp.get_all_multipeptides(fdr_cutoff_all_pg, verbose=False)
+    print("Parsing the peakgroups file took %ss" % (time.time() - start) )
+
+    mapping = {}
+    inferMapping([ mzML_file ], [ peakgroups_file ], mapping, verbose=False)
+    mapping_inv = dict([(v[0],k) for k,v in mapping.iteritems()])
+
+    # Do only a single run : read only one single file
+    start = time.time()
+    swath_chromatograms = SwathChromatogramCollection()
+    swath_chromatograms.parseFromMzML([ mzML_file ], mapping_inv)
+    print("Reading the chromatogram files took %ss" % (time.time() - start) )
+    assert len(swath_chromatograms.get_runids() ) == 1
+    rid = swath_chromatograms.get_runids()[0]
+
+    initial_alignment_cutoff = 0.0001
+    max_rt_diff = 30
+    tr_data = transformations.LightTransformationData()
+    spl_aligner = SplineAligner(initial_alignment_cutoff)
+
+    run_1 = [r for r in new_exp.runs if r.get_id() == rid][0]
+    for run_0 in new_exp.runs:
+        id_0 = run_0.get_id()
+        id_1 = rid
+        if id_1 == id_0: 
+            continue
+
+        # Data
+        data_0, data_1 = spl_aligner._getRTData(run_0, run_1, multipeptides)
+        tr_data.addData(id_0, data_0, id_1, data_1)
+
+        # Smoothers
+        sm_0_1 = smoothing.getSmoothingObj(options.realign_method, topN=3, max_rt_diff=max_rt_diff, min_rt_diff=0.1, removeOutliers=False, tmpdir=None)
+        sm_1_0 = smoothing.getSmoothingObj(options.realign_method, topN=3, max_rt_diff=max_rt_diff, min_rt_diff=0.1, removeOutliers=False, tmpdir=None)
+
+        # Add data
+        sm_0_1.initialize(data_0, data_1)
+        sm_1_0.initialize(data_1, data_0)
+        tr_data.addTrafo(id_0, id_1, sm_0_1)
+        tr_data.addTrafo(id_1, id_0, sm_1_0)
+
+    dist_matrix = getDistanceMatrix(new_exp, multipeptides, initial_alignment_cutoff)
+
+    start = time.time()
+    multipeptides = analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
+        tr_data, options.border_option, rid, tree=None, mat=dist_matrix)
+    print("Analyzing the runs took %ss" % (time.time() - start) )
+
+    return new_exp, multipeptides
+
 def run_impute_values(options, peakgroups_file, trafo_fnames):
     """Impute values across chromatograms
 
@@ -259,7 +333,7 @@ def run_impute_values(options, peakgroups_file, trafo_fnames):
 
         print "Current run:", rid
         initial_alignment_cutoff = 0.0001
-        smoothing_method = "lowess"
+        smoothing_method = options.realign_method
         max_rt_diff = 30
         from msproteomicstoolslib.algorithms.alignment.SplineAligner import SplineAligner
         tr_data = transformations.LightTransformationData()
@@ -352,6 +426,7 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
 
     This function will update the input multipeptides and add peakgroups, imputing missing values 
     """
+
     # Go through all aligned peptides
     class CounterClass: pass
     cnt = CounterClass()
@@ -359,6 +434,7 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
     cnt.imputations = 0
     cnt.imputation_succ = 0
     cnt.peakgroups = 0
+
     print "Will work on %s peptides" % (len(multipeptides))
     for i,m in enumerate(multipeptides):
         if i % 500 == 0: print "Done with %s out of %s" % (i, len(multipeptides))
@@ -373,7 +449,7 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
         clusters = set( [pg.get_cluster_id() for p in m.get_peptides() for pg in p.get_all_peakgroups()])
         for cl in clusters:
             selected_pg = [pg for p in m.get_peptides() for pg in p.get_all_peakgroups() if pg.get_cluster_id() == cl]
-            analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatograms, 
+            analyze_multipeptide_cluster(m, cnt, new_exp, swath_chromatograms, 
                                       transformation_collection_, border_option, selected_pg, cl,
                                       onlyExtractFromRun, tree, mat)
 
@@ -382,8 +458,8 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
     print "Peakgroups:", cnt.peakgroups
     return multipeptides 
 
-def analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatograms, 
-                          transformation_collection_, border_option, selected_pg, clid,
+def analyze_multipeptide_cluster(m, cnt, new_exp, swath_chromatograms, 
+                          transformation_collection_, border_option, selected_pg, cluster_id,
                           onlyExtractFromRun=None, tree=None, mat=None):
 
         for rid in [r.get_id() for r in new_exp.runs]:
@@ -395,6 +471,7 @@ def analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatog
                 cnt.imputations += 1
                 imputed=True
 
+                # Skip if we should not extract from this run
                 if not onlyExtractFromRun is None:
                     if onlyExtractFromRun != rid:
                         continue
@@ -402,6 +479,7 @@ def analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatog
                 # Select current run, compute right/left integration border and then integrate
                 current_run = [r for r in new_exp.runs if r.get_id() == rid][0]
                 rmap = dict([(r.get_id(),i) for i,r in enumerate(new_exp.runs) ])
+
                 # print "Will try to fill NA in run", current_run.get_id(), "for peptide", m.get_peptides()[0].get_id()
                 border_l, border_r = integrationBorderShortestDistance(m, selected_pg, 
                     rid, transformation_collection_, border_option, tree, mat, rmap)
@@ -411,7 +489,7 @@ def analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatog
                     cnt.imputation_succ += 1
                     precursor = GeneralPrecursor(newpg.get_value("transition_group_id"), current_run)
                     # Select for output, add to precursor
-                    newpg.setClusterID(clid)
+                    newpg.setClusterID(cluster_id)
                     precursor.add_peakgroup(newpg)
                     m.insert(rid, precursor)
 
@@ -644,7 +722,8 @@ def handle_args():
 
 def main(options):
     import time
-    new_exp, multipeptides = run_impute_values(options, options.peakgroups_infile, options.infiles)
+    #new_exp, multipeptides = run_impute_values(options, options.peakgroups_infile, options.infiles)
+    new_exp, multipeptides = runSingleFileImputation(options, options.peakgroups_infile, options.do_single_run)
     if options.dry_run: return
     write_out(new_exp, multipeptides, options.output, options.matrix_outfile, options.do_single_run)
 

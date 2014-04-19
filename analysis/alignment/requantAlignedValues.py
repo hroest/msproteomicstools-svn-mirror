@@ -428,7 +428,7 @@ def analyze_multipeptide_cluster(current_mpep, cnt, new_exp, swath_chromatograms
                 current_run = [r for r in new_exp.runs if r.get_id() == rid][0]
                 rmap = dict([(r.get_id(),i) for i,r in enumerate(new_exp.runs) ])
 
-                # print "Will try to fill NA in run", current_run.get_id(), "for peptide", m.get_peptides()[0].get_id()
+                # print "Will try to fill NA in run", current_run.get_id(), "for peptide", current_mpep.get_peptides()[0].get_id()
                 if mat is not None:
                     border_l, border_r = integrationBorderShortestDistance(selected_pg, 
                         rid, transformation_collection_, mat, rmap)
@@ -437,6 +437,8 @@ def analyze_multipeptide_cluster(current_mpep, cnt, new_exp, swath_chromatograms
                 newpg = integrate_chromatogram(selected_pg[0], current_run, swath_chromatograms,
                                              border_l, border_r, cnt)
                 if newpg != "NA": 
+                    # print "Managed to fill NA in run", current_run.get_id(), \
+                    #       "with value", newpg.get_value("Intensity"), "/ borders", border_l, border_r
                     cnt.imputation_succ += 1
                     precursor = GeneralPrecursor(newpg.get_value("transition_group_id"), current_run)
                     # Select for output, add to precursor

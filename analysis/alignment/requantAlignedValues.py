@@ -403,7 +403,7 @@ def analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatog
                 current_run = [r for r in new_exp.runs if r.get_id() == rid][0]
                 rmap = dict([(r.get_id(),i) for i,r in enumerate(new_exp.runs) ])
                 # print "Will try to fill NA in run", current_run.get_id(), "for peptide", m.get_peptides()[0].get_id()
-                border_l, border_r = determine_integration_border(m, selected_pg, 
+                border_l, border_r = integrationBorderShortestDistance(m, selected_pg, 
                     rid, transformation_collection_, border_option, tree, mat, rmap)
                 newpg = integrate_chromatogram(selected_pg[0], current_run, swath_chromatograms,
                                              border_l, border_r, cnt)
@@ -414,6 +414,30 @@ def analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatog
                     newpg.setClusterID(clid)
                     precursor.add_peakgroup(newpg)
                     m.insert(rid, precursor)
+
+def integrationBorderShortestDistance(m, selected_pg, target_run, transformation_collection_, border_option, tree, mat, rmap):
+    """Determine the optimal integration border by using the shortest distance
+
+    Returns:
+        A tuple of (left_integration_border, right_integration_border)
+    """
+
+    # Available runs which have a reliable RT value (no noise integration values ... )
+    available_runs = [pg.peptide.run.get_id() for pg in selected_pg if pg.get_fdr_score() < 1.0]
+
+    # Select current row from the matrix, reduce to columns of runs for which
+    # we actually have a value and select closest among these
+    current_matrix_row = mat[rmap[target_run],]
+    current_matrix_row = [ (current_matrix_row[ rmap[curr] ], curr) for curr in available_runs]
+    source_run = min(current_matrix_row)[1]
+
+    # Transform
+    best_pg = [pg for pg in selected_pg if pg.peptide.run.get_id() == source_run][0]
+    rwidth = float(best_pg.get_value("rightWidth"))
+    lwidth = float(best_pg.get_value("leftWidth"))
+    leftW = transformation_collection_.getTrafo(source_run, target_run).predict([lwidth])[0]
+    rightW = transformation_collection_.getTrafo(source_run, target_run).predict([rwidth])[0]
+    return leftW, rightW
 
 def determine_integration_border(m, selected_pg, rid, transformation_collection_, border_option, tree, mat, rmap):
     """Determine the optimal integration border by taking the mean of all other peakgroup boundaries.
@@ -427,44 +451,6 @@ def determine_integration_border(m, selected_pg, rid, transformation_collection_
     Returns:
         A tuple of (left_integration_border, right_integration_border) in the retention time space of the _reference_ run
     """
-
-    # current_run = [r for r in new_exp.runs if r.get_id() == rid][0]
-    # print current_run
-    # print current_run.get_id()
-    # print rid
-    # print "===="
-    # # print selected_pg[0].peptide.run.get_id()
-    # ref_id = transformation_collection_.getReferenceRunID()
-
-    # Option 1: short distance
-    # print mat
-    curr_peps = [p.run.get_id() for p in m.get_peptides()]
-    # print "have peptides for", curr_peps
-
-    curr_peps = [pg.peptide.run.get_id() for pg in selected_pg]
-    # print "have peptides for", curr_peps
-    # print "have run map", rmap
-    # print "need borders for", rid
-    current_mat_row = mat[rmap[rid],]
-    # print "current row ", current_mat_row
-    maprow = [ (current_mat_row[ rmap[curr] ], curr) for curr in curr_peps]
-    # print "current row mapped", maprow
-    # print "min ", min(maprow)
-    # print "Align", min(maprow)[1], "for target", rid
-    source = min(maprow)[1]
-    target = rid
-
-    bestpg = [pg for pg in selected_pg if pg.peptide.run.get_id() == source][0]
-    rwidth = float(bestpg.get_value("rightWidth"))
-    lwidth = float(bestpg.get_value("leftWidth"))
-    leftW = transformation_collection_.getTrafo(source, target).predict([lwidth])[0]
-    rightW = transformation_collection_.getTrafo(source, target).predict([rwidth])[0]
-
-    # print "Transform", source, target
-    # print "Transform", lwidth, "to", leftW
-    # print "Transform", rwidth, "to", rightW
-    # print "===================="
-    return leftW, rightW
 
 
     # Option 2: best path
@@ -482,7 +468,6 @@ def determine_integration_border(m, selected_pg, rid, transformation_collection_
                 visited[e1] = -1
     print current_path
     print "----------------"
-
 
 
     pg_lefts = []
@@ -601,7 +586,6 @@ def integrate_chromatogram(template_pg, current_run, swath_chromatograms,
     newpg.set_value("aggr_Fragment_Annotation", aggr_annotation)
     newpg.set_value("Intensity", integrated_sum)
     newpg.set_intensity(integrated_sum)
-    print "New pg", integrated_sum
     return newpg
 
 def write_out(new_exp, multipeptides, outfile, matrix_outfile, single_outfile):

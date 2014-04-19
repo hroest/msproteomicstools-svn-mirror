@@ -353,7 +353,6 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
     This function will update the input multipeptides and add peakgroups, imputing missing values 
     """
     # Go through all aligned peptides
-    run_ids = [r.get_id() for r in new_exp.runs]
     class CounterClass: pass
     cnt = CounterClass()
     cnt.integration_bnd_warnings = 0
@@ -363,13 +362,12 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
     print "Will work on %s peptides" % (len(multipeptides))
     for i,m in enumerate(multipeptides):
         if i % 500 == 0: print "Done with %s out of %s" % (i, len(multipeptides))
-        # print "00000000000000000000000000000000000 new peptide (noiseIntegration)", m.get_peptides()[0].get_id()
+        print "00000000000000000000000000000000000 new peptide (noiseIntegration)", m.get_peptides()[0].get_id()
         # if m.get_peptides()[0].get_id()=="10327_HQNPDPDALGSQAGLK_3_run0": continue
         # if m.get_peptides()[0].get_id()=="10155_HFDQAENR_2_run0": continue
 
-        ## print "", [pg for p in m.get_peptides() for pg in p.get_all_peakgroups()]
-        ## print "Cluster id", [pg.get_cluster_id() for p in m.get_peptides() for pg in p.get_all_peakgroups()]
-        #def getClusteredPeakgroups(self):
+        print "", [pg for p in m.get_peptides() for pg in p.get_all_peakgroups()]
+        print "Cluster id", [pg.get_cluster_id() for p in m.get_peptides() for pg in p.get_all_peakgroups()]
 
         # Ensure that each run has either exactly one peakgroup (or zero)
         if all ([pg.get_cluster_id() == -1 for p in m.get_peptides() for pg in p.get_all_peakgroups()]) and \
@@ -384,7 +382,26 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
             # TODO : only first pg ... !!
             selected_pg = [p.get_selected_peakgroup() for p in m.get_peptides()]
 
-        for rid in run_ids:
+        # doBr = False
+        # if not all ([pg.get_cluster_id() == 1 for p in m.get_peptides() for pg in p.get_all_peakgroups()]):
+        #     doBr = True
+
+        analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatograms, 
+                                  transformation_collection_, border_option, selected_pg,
+                                  onlyExtractFromRun, tree, mat)
+
+        #assert not doBr
+
+    print "Imputations:", cnt.imputations, "Successful:", cnt.imputation_succ, "Still missing", cnt.imputations - cnt.imputation_succ
+    print "WARNING: %s times: Chromatogram does not cover full range"  % (cnt.integration_bnd_warnings)
+    print "Peakgroups:", cnt.peakgroups
+    return multipeptides 
+
+def analyze_multipeptide_cluster(m, cnt, new_exp, multipeptides, swath_chromatograms, 
+                          transformation_collection_, border_option, selected_pg,
+                          onlyExtractFromRun=None, tree=None, mat=None):
+
+        for rid in [r.get_id() for r in new_exp.runs]:
             cnt.peakgroups += 1
 
             # Check whether we have a peakgroup for this run id, if yes we mark
@@ -418,11 +435,6 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
                     newpg.select_this_peakgroup()
                     precursor.add_peakgroup(newpg)
                     m.insert(rid, precursor)
-
-    print "Imputations:", cnt.imputations, "Successful:", cnt.imputation_succ, "Still missing", cnt.imputations - cnt.imputation_succ
-    print "WARNING: %s times: Chromatogram does not cover full range"  % (cnt.integration_bnd_warnings)
-    print "Peakgroups:", cnt.peakgroups
-    return multipeptides 
 
 def determine_integration_border(m, selected_pg, rid, transformation_collection_, border_option, tree, mat, rmap):
     """Determine the optimal integration border by taking the mean of all other peakgroup boundaries.

@@ -125,25 +125,6 @@ class TreeConsensusAlignment():
                     if False:
                         print "   = Have member", pg.print_out()
 
-                # Checking for consistency
-                for j in range(i+1,len(clusters)): 
-                    if verb:
-                        print "check ", i,j
-                    cluster_constency = {}
-                    for r in exp.runs:
-                        pgi = clusters[i].getPGForRun(r.get_id())
-                        pgj = clusters[j].getPGForRun(r.get_id())   
-
-                        if pgi is not None and pgj is not None:
-                            # print "pg vs ", pgi.get_normalized_retentiontime(), pgj.get_normalized_retentiontime()
-                            diff = pgi.get_normalized_retentiontime() - pgj.get_normalized_retentiontime()
-                            cluster_constency[r.get_id()] = diff
-                            if verb:
-                                print "pg diff ", diff, "for run", r.get_id()
-                    if not (all([diff < 0 for diff in cluster_constency.values()]) or all([diff > 0 for diff in cluster_constency.values()])):
-                        print "Inconsistency detected ", i,j, cluster_constency, m.get_peptides()[0].get_id()
-                        # print "  -- RT", [(pg.peptide.run.get_id(), float(pg.get_value("rightWidth")) - float(pg.get_value("leftWidth"))) for pg in clusters[i].peakgroups]
-
     def _findPGCluster(self, tree, tr_data, m, seed, already_seen):
         seed_rt = seed.get_normalized_retentiontime()
 

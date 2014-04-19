@@ -395,6 +395,12 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
                                       transformation_collection_, border_option, selected_pg, cl,
                                       onlyExtractFromRun, tree, mat)
 
+        if all ([pg.get_cluster_id() == -1 for p in m.get_peptides() for pg in p.get_all_peakgroups()]):
+            # no cluster info was read in -> select all
+            for p in m.get_peptides():
+                for pg in p.get_all_peakgroups():
+                    pg.select_this_peakgroup()
+
     print "Imputations:", cnt.imputations, "Successful:", cnt.imputation_succ, "Still missing", cnt.imputations - cnt.imputation_succ
     print "WARNING: %s times: Chromatogram does not cover full range"  % (cnt.integration_bnd_warnings)
     print "Peakgroups:", cnt.peakgroups

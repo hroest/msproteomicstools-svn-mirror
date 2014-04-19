@@ -303,87 +303,29 @@ def run_impute_values(options, peakgroups_file, trafo_fnames):
     multipeptides = new_exp.get_all_multipeptides(fdr_cutoff_all_pg, verbose=False)
     print("Parsing the peakgroups file took %ss" % (time.time() - start) )
 
-    # start = time.time()
-    # transformation_collection_ = transformations.TransformationCollection()
-    # for filename in trafo_fnames:
-    #     transformation_collection_.readTransformationData(filename)
+    start = time.time()
+    transformation_collection_ = transformations.TransformationCollection()
+    for filename in trafo_fnames:
+        transformation_collection_.readTransformationData(filename)
 
-    # # Read the datapoints and perform the smoothing
-    # print("Reading the trafo file took %ss" % (time.time() - start) )
-    # start = time.time()
-    # transformation_collection_.initialize_from_data(reverse=True, smoother=options.realign_method)
-    # print("Initializing the trafo file took %ss" % (time.time() - start) )
+    # Read the datapoints and perform the smoothing
+    print("Reading the trafo file took %ss" % (time.time() - start) )
+    start = time.time()
+    transformation_collection_.initialize_from_data(reverse=True, smoother=options.realign_method)
+    print("Initializing the trafo file took %ss" % (time.time() - start) )
 
     if options.do_single_run and not options.dry_run:
-
-        mapping = {}
-        inferMapping([ options.do_single_run ], [ peakgroups_file ], mapping, verbose=False)
-        print "Mapping", mapping
-        mapping_inv = dict([(v[0],k) for k,v in mapping.iteritems()])
-        print "Mapping inv", mapping_inv
-
         # Do only a single run : read only one single file
         start = time.time()
         swath_chromatograms = SwathChromatogramCollection()
-        # swath_chromatograms.parse([ options.do_single_run ])
-        swath_chromatograms.parseFromMzML([ options.do_single_run ], mapping_inv)
+        swath_chromatograms.parse([ options.do_single_run ])
         print("Reading the chromatogram files took %ss" % (time.time() - start) )
         assert len(swath_chromatograms.get_runids() ) == 1
         rid = swath_chromatograms.get_runids()[0]
-
-        print "Current run:", rid
-        initial_alignment_cutoff = 0.0001
-        smoothing_method = options.realign_method
-        max_rt_diff = 30
-        from msproteomicstoolslib.algorithms.alignment.SplineAligner import SplineAligner
-        tr_data = transformations.LightTransformationData()
-        spl_aligner = SplineAligner(initial_alignment_cutoff)
-        tree_mapped = None
-
-        from msproteomicstoolslib.algorithms.alignment.AlignmentMST import getDistanceMatrix
-
-        # from msproteomicstoolslib.algorithms.alignment.AlignmentMST import getMinimumSpanningTree
-        # tree = getMinimumSpanningTree(new_exp, multipeptides, initial_alignment_cutoff)
-        # # Get alignments
-        # for edge in tree:
-        #     id_0 = new_exp.runs[edge[0]].get_id()
-        #     id_1 = new_exp.runs[edge[1]].get_id()
-        #     # Data
-        #     data_0, data_1 = spl_aligner._getRTData(new_exp.runs[edge[0]], new_exp.runs[edge[1]], multipeptides)
-        #     tr_data.addData(id_0, data_0, new_exp.runs[edge[1]].get_id(), data_1)
-        #     # Smoothers
-        #     sm_0_1 = smoothing.getSmoothingObj(smoothing_method, topN=3, max_rt_diff=max_rt_diff, min_rt_diff=0.1, removeOutliers=False, tmpdir=None)
-        #     sm_1_0 = smoothing.getSmoothingObj(smoothing_method, topN=3, max_rt_diff=max_rt_diff, min_rt_diff=0.1, removeOutliers=False, tmpdir=None)
-        #     # Add data
-        #     sm_0_1.initialize(data_0, data_1)
-        #     sm_1_0.initialize(data_1, data_0)
-        #     tr_data.addTrafo(id_0, id_1, sm_0_1)
-        #     tr_data.addTrafo(id_1, id_0, sm_1_0)
-        # 
-        # print "Got Alignment"
-        # tree_mapped = [ (new_exp.runs[a].get_id(), new_exp.runs[b].get_id()) for a,b in tree]
-        run_1 = [r for r in new_exp.runs if r.get_id() == rid][0]
-        for run_0 in new_exp.runs:
-            id_0 = run_0.get_id()
-            id_1 = rid
-            print "Align", id_0, id_1
-            # Data
-            data_0, data_1 = spl_aligner._getRTData(run_0, run_1, multipeptides)
-            tr_data.addData(id_0, data_0, id_1, data_1)
-            # Smoothers
-            sm_0_1 = smoothing.getSmoothingObj(smoothing_method, topN=3, max_rt_diff=max_rt_diff, min_rt_diff=0.1, removeOutliers=False, tmpdir=None)
-            sm_1_0 = smoothing.getSmoothingObj(smoothing_method, topN=3, max_rt_diff=max_rt_diff, min_rt_diff=0.1, removeOutliers=False, tmpdir=None)
-            # Add data
-            sm_0_1.initialize(data_0, data_1)
-            sm_1_0.initialize(data_1, data_0)
-            tr_data.addTrafo(id_0, id_1, sm_0_1)
-            tr_data.addTrafo(id_1, id_0, sm_1_0)
-
-        dist_matrix = getDistanceMatrix(new_exp, multipeptides, initial_alignment_cutoff)
         # 
         start = time.time()
         multipeptides = analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
-            tr_data, options.border_option, rid, tree=tree_mapped, mat=dist_matrix)
+            transformation_collection_, options.border_option, rid)
         print("Analyzing the runs took %ss" % (time.time() - start) )
         return new_exp, multipeptides
 
@@ -410,7 +352,7 @@ def run_impute_values(options, peakgroups_file, trafo_fnames):
             transformation_collection_, options.border_option)
     print("Analyzing the runs took %ss" % (time.time() - start) )
     return new_exp, multipeptides
-    
+
 def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms, 
                           transformation_collection_, border_option, onlyExtractFromRun=None, tree=None, mat=None):
     """Analyze the multipeptides and impute missing values
@@ -458,7 +400,7 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
     print "Peakgroups:", cnt.peakgroups
     return multipeptides 
 
-def analyze_multipeptide_cluster(m, cnt, new_exp, swath_chromatograms, 
+def analyze_multipeptide_cluster(current_mpep, cnt, new_exp, swath_chromatograms, 
                           transformation_collection_, border_option, selected_pg, cluster_id,
                           onlyExtractFromRun=None, tree=None, mat=None):
 
@@ -481,8 +423,11 @@ def analyze_multipeptide_cluster(m, cnt, new_exp, swath_chromatograms,
                 rmap = dict([(r.get_id(),i) for i,r in enumerate(new_exp.runs) ])
 
                 # print "Will try to fill NA in run", current_run.get_id(), "for peptide", m.get_peptides()[0].get_id()
-                border_l, border_r = integrationBorderShortestDistance(m, selected_pg, 
-                    rid, transformation_collection_, border_option, tree, mat, rmap)
+                if mat is not None:
+                    border_l, border_r = integrationBorderShortestDistance(selected_pg, 
+                        rid, transformation_collection_, mat, rmap)
+                else:
+                    border_l, border_r = determine_integration_border(new_exp, selected_pg, rid, transformation_collection_, border_option)
                 newpg = integrate_chromatogram(selected_pg[0], current_run, swath_chromatograms,
                                              border_l, border_r, cnt)
                 if newpg != "NA": 
@@ -491,9 +436,9 @@ def analyze_multipeptide_cluster(m, cnt, new_exp, swath_chromatograms,
                     # Select for output, add to precursor
                     newpg.setClusterID(cluster_id)
                     precursor.add_peakgroup(newpg)
-                    m.insert(rid, precursor)
+                    current_mpep.insert(rid, precursor)
 
-def integrationBorderShortestDistance(m, selected_pg, target_run, transformation_collection_, border_option, tree, mat, rmap):
+def integrationBorderShortestDistance(selected_pg, target_run, transformation_collection_, mat, rmap):
     """Determine the optimal integration border by using the shortest distance
 
     Returns:
@@ -517,7 +462,7 @@ def integrationBorderShortestDistance(m, selected_pg, target_run, transformation
     rightW = transformation_collection_.getTrafo(source_run, target_run).predict([rwidth])[0]
     return leftW, rightW
 
-def determine_integration_border(m, selected_pg, rid, transformation_collection_, border_option, tree, mat, rmap):
+def determine_integration_border(new_exp, selected_pg, rid, transformation_collection_, border_option):
     """Determine the optimal integration border by taking the mean of all other peakgroup boundaries.
 
     Args:
@@ -529,24 +474,8 @@ def determine_integration_border(m, selected_pg, rid, transformation_collection_
     Returns:
         A tuple of (left_integration_border, right_integration_border) in the retention time space of the _reference_ run
     """
-
-
-    # Option 2: best path
-    visited = { selected_pg[0].peptide.run.get_id() : selected_pg } 
-    print "try to align against run", rid
-    print visited
-    current_path = []
-    while len(visited.keys()) != m.get_nr_runs():
-        for e1, e2 in tree:
-            if e1 in visited.keys() and not e2 in visited.keys():
-                current_path.append(e2)
-                visited[e2] = -1
-            if e2 in visited.keys() and not e1 in visited.keys():
-                current_path.append(e1)
-                visited[e1] = -1
-    print current_path
-    print "----------------"
-
+    current_run = [r for r in new_exp.runs if r.get_id() == rid][0]
+    ref_id = transformation_collection_.getReferenceRunID()
 
     pg_lefts = []
     pg_rights = []
@@ -555,9 +484,9 @@ def determine_integration_border(m, selected_pg, rid, transformation_collection_
         rwidth = float(pg.get_value("rightWidth"))
         lwidth = float(pg.get_value("leftWidth"))
         this_run_rwidth = ImputeValuesHelper.convert_to_this(pg.peptide.run.get_id(),
-            rid, ref_id, rwidth, transformation_collection_)
+            current_run.get_id(), ref_id, rwidth, transformation_collection_)
         this_run_lwidth = ImputeValuesHelper.convert_to_this(pg.peptide.run.get_id(),
-            rid, ref_id, lwidth, transformation_collection_)
+            current_run.get_id(), ref_id, lwidth, transformation_collection_)
 
         pg_lefts.append(this_run_lwidth)
         pg_rights.append(this_run_rwidth)
@@ -710,6 +639,7 @@ def handle_args():
     parser.add_argument('--border_option', default='median', metavar="median", help="How to determine integration border (possible values: max_width, mean, median). Max width will use the maximal possible width (most conservative since it will overestimate the background signal).")
     parser.add_argument('--dry_run', action='store_true', default=False, help="Perform a dry run only")
     parser.add_argument('--cache_in_memory', action='store_true', default=False, help="Cache data from a single run in memory")
+    parser.add_argument('--method', dest='method', default="allTrafo", help="Which method to use (allTrafo, singleShortest)")
     parser.add_argument('--realign_runs', dest='realign_method', default="splineR", help="How to re-align runs in retention time ('diRT': use only deltaiRT from the input file, 'linear': perform a linear regression using best peakgroups, 'splineR': perform a spline fit using R, 'splineR_external': perform a spline fit using R (start an R process using the command line, 'splinePy' use Python native spline from scikits.datasmooth (slow!), 'lowess': use Robust locally weighted regression (lowess smoother)")
     parser.add_argument('--verbosity', default=0, type=int, help="Verbosity")
     parser.add_argument('--do_single_run', default='', metavar="", help="Only do a single run")
@@ -722,8 +652,10 @@ def handle_args():
 
 def main(options):
     import time
-    #new_exp, multipeptides = run_impute_values(options, options.peakgroups_infile, options.infiles)
-    new_exp, multipeptides = runSingleFileImputation(options, options.peakgroups_infile, options.do_single_run)
+    if options.method == "singleShortest":
+        new_exp, multipeptides = runSingleFileImputation(options, options.peakgroups_infile, options.do_single_run)
+    else:
+        new_exp, multipeptides = run_impute_values(options, options.peakgroups_infile, options.infiles)
     if options.dry_run: return
     write_out(new_exp, multipeptides, options.output, options.matrix_outfile, options.do_single_run)
 

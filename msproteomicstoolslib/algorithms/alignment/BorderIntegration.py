@@ -35,6 +35,7 @@ $Authors: Hannes Roest$
 --------------------------------------------------------------------------
 """
 
+import numpy
 import msproteomicstoolslib.algorithms.graphs.graphs as graphs
 
 def integrationBorderShortestPath(selected_pg, target_run, transformation_collection_, tree):
@@ -120,15 +121,29 @@ def integrationBorderReference(new_exp, selected_pg, rid, transformation_collect
     current_run = [r for r in new_exp.runs if r.get_id() == rid][0]
     ref_id = transformation_collection_.getReferenceRunID()
 
+    def convert_to_this(orig_runid, target_runid, ref_id, rt, transformation_collection_):
+        """ Convert a retention time into one of the target RT space.
+        
+        Using the transformation collection
+        """
+        try:
+            normalized_space_rt = transformation_collection_.getTransformation(orig_runid, ref_id).predict( [rt] )[0]
+            return transformation_collection_.getTransformation(ref_id, target_runid).predict( [normalized_space_rt] )[0]
+        except AttributeError as e:
+            print "Could not convert from run %s to run %s (throug reference run %s)- are you sure you gave the correspoding trafo file with the --in parameter?" % (orig_runid, target_runid, ref_id)
+            print e
+            raise e
+
+
     pg_lefts = []
     pg_rights = []
     for pg in selected_pg:
 
         rwidth = float(pg.get_value("rightWidth"))
         lwidth = float(pg.get_value("leftWidth"))
-        this_run_rwidth = ImputeValuesHelper.convert_to_this(pg.peptide.run.get_id(),
+        this_run_rwidth = convert_to_this(pg.peptide.run.get_id(),
             current_run.get_id(), ref_id, rwidth, transformation_collection_)
-        this_run_lwidth = ImputeValuesHelper.convert_to_this(pg.peptide.run.get_id(),
+        this_run_lwidth = convert_to_this(pg.peptide.run.get_id(),
             current_run.get_id(), ref_id, lwidth, transformation_collection_)
 
         pg_lefts.append(this_run_lwidth)

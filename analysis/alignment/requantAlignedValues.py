@@ -62,7 +62,7 @@ class ImputeValuesHelper(object):
         """Select the correct chromatogram
 
         Args:
-            swath_chromatograms(dict): containing the objects pointing to the original chrom mzML (see run_impute_values)
+            swath_chromatograms(dict): containing the objects pointing to the original chrom mzML (see runImputeValues)
             mz(float): the mz value of the precursor
         """
         mz = mz + SWATH_EDGE_SHIFT
@@ -78,20 +78,6 @@ class ImputeValuesHelper(object):
             if len(selected) == 1: 
                 res[k] = selected[0]
         return res
-
-    @staticmethod
-    def convert_to_this(orig_runid, target_runid, ref_id, rt, transformation_collection_):
-        """ Convert a retention time into one of the target RT space.
-        
-        Using the transformation collection
-        """
-        try:
-            normalized_space_rt = transformation_collection_.getTransformation(orig_runid, ref_id).predict( [rt] )[0]
-            return transformation_collection_.getTransformation(ref_id, target_runid).predict( [normalized_space_rt] )[0]
-        except AttributeError as e:
-            print "Could not convert from run %s to run %s (throug reference run %s)- are you sure you gave the correspoding trafo file with the --in parameter?" % (orig_runid, target_runid, ref_id)
-            print e
-            raise e
 
     @staticmethod
     def addDataToTrafo(tr_data, run_0, run_1, spl_aligner, multipeptides, realign_method, max_rt_diff):
@@ -218,6 +204,10 @@ class SwathChromatogramCollection(object):
     def get_runids(self):
         return self.allruns.keys()
 
+# Main entry points:
+# runSingleFileImputation
+# runImputeValues
+
 def runSingleFileImputation(options, peakgroups_file, mzML_file, method):
     """Impute values across chromatograms
 
@@ -287,7 +277,7 @@ def runSingleFileImputation(options, peakgroups_file, mzML_file, method):
 
     return new_exp, multipeptides
 
-def run_impute_values(options, peakgroups_file, trafo_fnames):
+def runImputeValues(options, peakgroups_file, trafo_fnames):
     """Impute values across chromatograms
 
     Args:
@@ -371,7 +361,7 @@ def analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
     Args:
         new_exp(AlignmentExperiment): experiment containing the aligned peakgroups
         multipeptides(list(AlignmentHelper.Multipeptide)): list of multipeptides
-        swath_chromatograms(dict): containing the objects pointing to the original chrom mzML (see run_impute_values)
+        swath_chromatograms(dict): containing the objects pointing to the original chrom mzML (see runImputeValues)
         transformation_collection_(.TransformationCollection): specifying how to transform between retention times of different runs
 
     Returns:
@@ -601,7 +591,7 @@ def main(options):
     if options.method in ["singleShortestPath", "singleClosestRun"]:
         new_exp, multipeptides = runSingleFileImputation(options, options.peakgroups_infile, options.do_single_run, options.method)
     else:
-        new_exp, multipeptides = run_impute_values(options, options.peakgroups_infile, options.infiles)
+        new_exp, multipeptides = runImputeValues(options, options.peakgroups_infile, options.infiles)
     if options.dry_run: return
     write_out(new_exp, multipeptides, options.output, options.matrix_outfile, options.do_single_run)
 

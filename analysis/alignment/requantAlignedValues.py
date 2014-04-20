@@ -33,6 +33,11 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 $Maintainer: Hannes Roest$
 $Authors: Hannes Roest$
 --------------------------------------------------------------------------
+
+python analysis/alignment/feature_alignment.py --in /media/data/tmp/smallset_sorted/*.csv --out /tmp/out_new.csv --readmethod minimal  --method LocalMSTAllCluster --max_rt_diff 75 --alignment_score 0.001 --realign_runs "WeightedNearestNeighbour"  --use_dscore_filter --dscore_cutoff -2.0 --out_ids /tmp/ids --max_fdr_quality 0.20
+
+time python analysis/alignment/requantAlignedValues.py --peakgroups_infile /tmp/out_new2.csv  --out /tmp/imputed_new2.csv --do_single_run /media/data/tmp/strep_new4/hroest_K131126_023_SW_Spyo_M3_Musser_21.chrom.mzML --realign_runs "lowess" --method singleClosestRun  && diff /tmp/imputed_new2.csv imputed_expected.csv && echo "Success"
+
 """
 
 import os, sys, csv, time
@@ -42,7 +47,9 @@ from msproteomicstoolslib.format.SWATHScoringReader import *
 import msproteomicstoolslib.format.TransformationCollection as transformations
 from msproteomicstoolslib.algorithms.alignment.SplineAligner import SplineAligner
 from msproteomicstoolslib.algorithms.alignment.AlignmentMST import getDistanceMatrix
+from msproteomicstoolslib.algorithms.PADS.MinimumSpanningTree import MinimumSpanningTree
 from msproteomicstoolslib.algorithms.alignment.AlignmentHelper import write_out_matrix_file
+import msproteomicstoolslib.algorithms.graphs.graphs as graphs
 import msproteomicstoolslib.math.Smoothing as smoothing
 from feature_alignment import Experiment
 
@@ -188,7 +195,34 @@ class SwathChromatogramCollection(object):
     def get_runids(self):
         return self.allruns.keys()
 
-def runSingleFileImputation(options, peakgroups_file, mzML_file):
+def addDataToTrafo(tr_data, run_0, run_1, spl_aligner, multipeptides, realign_method, max_rt_diff):
+    id_0 = run_0.get_id()
+    id_1 = run_1.get_id()
+
+    if id_0 == id_1:
+        return
+
+    # Data
+    data_0, data_1 = spl_aligner._getRTData(run_0, run_1, multipeptides)
+    tr_data.addData(id_0, data_0, id_1, data_1)
+
+    # Smoothers
+    sm_0_1 = smoothing.getSmoothingObj(options.realign_method, topN=3,
+                                       max_rt_diff=max_rt_diff,
+                                       min_rt_diff=0.1, removeOutliers=False,
+                                       tmpdir=None)
+    sm_1_0 = smoothing.getSmoothingObj(options.realign_method, topN=3,
+                                       max_rt_diff=max_rt_diff,
+                                       min_rt_diff=0.1, removeOutliers=False,
+                                       tmpdir=None)
+
+    # Add data
+    sm_0_1.initialize(data_0, data_1)
+    sm_1_0.initialize(data_1, data_0)
+    tr_data.addTrafo(id_0, id_1, sm_0_1)
+    tr_data.addTrafo(id_1, id_0, sm_1_0)
+
+def runSingleFileImputation(options, peakgroups_file, mzML_file, method):
     """Impute values across chromatograms
 
     Args:
@@ -230,32 +264,28 @@ def runSingleFileImputation(options, peakgroups_file, mzML_file):
     tr_data = transformations.LightTransformationData()
     spl_aligner = SplineAligner(initial_alignment_cutoff)
 
-    run_1 = [r for r in new_exp.runs if r.get_id() == rid][0]
-    for run_0 in new_exp.runs:
-        id_0 = run_0.get_id()
-        id_1 = rid
-        if id_1 == id_0: 
-            continue
+    if method == "singleClosestRun":
+        tree_mapped = None
 
-        # Data
-        data_0, data_1 = spl_aligner._getRTData(run_0, run_1, multipeptides)
-        tr_data.addData(id_0, data_0, id_1, data_1)
+        dist_matrix = getDistanceMatrix(new_exp, multipeptides, initial_alignment_cutoff)
+        run_1 = [r for r in new_exp.runs if r.get_id() == rid][0]
+        for run_0 in new_exp.runs:
+            addDataToTrafo(tr_data, run_0, run_1, spl_aligner, multipeptides, options.realign_method, max_rt_diff)
 
-        # Smoothers
-        sm_0_1 = smoothing.getSmoothingObj(options.realign_method, topN=3, max_rt_diff=max_rt_diff, min_rt_diff=0.1, removeOutliers=False, tmpdir=None)
-        sm_1_0 = smoothing.getSmoothingObj(options.realign_method, topN=3, max_rt_diff=max_rt_diff, min_rt_diff=0.1, removeOutliers=False, tmpdir=None)
+    elif method == "singleShortestPath":
+        dist_matrix = None
 
-        # Add data
-        sm_0_1.initialize(data_0, data_1)
-        sm_1_0.initialize(data_1, data_0)
-        tr_data.addTrafo(id_0, id_1, sm_0_1)
-        tr_data.addTrafo(id_1, id_0, sm_1_0)
+        tree = MinimumSpanningTree(getDistanceMatrix(new_exp, multipeptides, initial_alignment_cutoff))
+        tree_mapped = [(new_exp.runs[a].get_id(), new_exp.runs[b].get_id()) for a,b in tree]
+        for edge in tree:
+            addDataToTrafo(tr_data, new_exp.runs[edge[0]], new_exp.runs[edge[1]], spl_aligner, multipeptides, options.realign_method, max_rt_diff)
 
-    dist_matrix = getDistanceMatrix(new_exp, multipeptides, initial_alignment_cutoff)
+    else:
+        raise Exception("Unknown method: " + method)
 
     start = time.time()
     multipeptides = analyze_multipeptides(new_exp, multipeptides, swath_chromatograms,
-        tr_data, options.border_option, rid, tree=None, mat=dist_matrix)
+        tr_data, options.border_option, rid, tree=tree_mapped, mat=dist_matrix)
     print("Analyzing the runs took %ss" % (time.time() - start) )
 
     return new_exp, multipeptides
@@ -429,11 +459,14 @@ def analyze_multipeptide_cluster(current_mpep, cnt, new_exp, swath_chromatograms
                 rmap = dict([(r.get_id(),i) for i,r in enumerate(new_exp.runs) ])
 
                 # print "Will try to fill NA in run", current_run.get_id(), "for peptide", current_mpep.get_peptides()[0].get_id()
-                if mat is not None:
+                if tree is not None:
+                    border_l, border_r = integrationBorderShortestPath(current_mpep, selected_pg, 
+                        rid, transformation_collection_, tree, rmap)
+                elif mat is not None:
                     border_l, border_r = integrationBorderShortestDistance(selected_pg, 
                         rid, transformation_collection_, mat, rmap)
                 else:
-                    border_l, border_r = determine_integration_border(new_exp, selected_pg, rid, transformation_collection_, border_option)
+                    border_l, border_r = integrationBorderReference(new_exp, selected_pg, rid, transformation_collection_, border_option)
                 newpg = integrate_chromatogram(selected_pg[0], current_run, swath_chromatograms,
                                              border_l, border_r, cnt)
                 if newpg != "NA": 
@@ -446,8 +479,38 @@ def analyze_multipeptide_cluster(current_mpep, cnt, new_exp, swath_chromatograms
                     precursor.add_peakgroup(newpg)
                     current_mpep.insert(rid, precursor)
 
+def integrationBorderShortestPath(m, selected_pg, target_run, transformation_collection_, tree, rmap):
+    """Determine the optimal integration border by using the shortest path in the MST
+
+    Returns:
+        A tuple of (left_integration_border, right_integration_border)
+    """
+
+    # Get the shortest path through the MST
+    available_runs = [pg.peptide.run.get_id() for pg in selected_pg if pg.get_fdr_score() < 1.0]
+    final_path = graphs.findShortestMSTPath(tree, target_run, available_runs)
+
+    # Extract the starting point and the starting borders (left/right)
+    source_run = final_path[-1]
+    best_pg = [pg for pg in selected_pg if pg.peptide.run.get_id() == source_run][0]
+    rwidth = float(best_pg.get_value("rightWidth"))
+    lwidth = float(best_pg.get_value("leftWidth"))
+    # if verb: print "Compare from", source_run, "directly to", target_run,\
+    #     transformation_collection_.getTrafo(source_run, target_run).predict([lwidth])[0], \
+    #     transformation_collection_.getTrafo(source_run, target_run).predict([rwidth])[0]
+
+    # Traverse path in reverse order
+    for target_run_ in reversed(final_path[:-1]):
+
+        # Transform, go to next step
+        lwidth = transformation_collection_.getTrafo(source_run, target_run_).predict([lwidth])[0]
+        rwidth = transformation_collection_.getTrafo(source_run, target_run_).predict([rwidth])[0]
+        source_run = target_run_
+
+    return lwidth, rwidth
+
 def integrationBorderShortestDistance(selected_pg, target_run, transformation_collection_, mat, rmap):
-    """Determine the optimal integration border by using the shortest distance
+    """Determine the optimal integration border by using the shortest distance (direct transformation)
 
     Returns:
         A tuple of (left_integration_border, right_integration_border)
@@ -470,8 +533,8 @@ def integrationBorderShortestDistance(selected_pg, target_run, transformation_co
     rightW = transformation_collection_.getTrafo(source_run, target_run).predict([rwidth])[0]
     return leftW, rightW
 
-def determine_integration_border(new_exp, selected_pg, rid, transformation_collection_, border_option):
-    """Determine the optimal integration border by taking the mean of all other peakgroup boundaries.
+def integrationBorderReference(new_exp, selected_pg, rid, transformation_collection_, border_option):
+    """Determine the optimal integration border by taking the mean of all other peakgroup boundaries using a reference run.
 
     Args:
         new_exp(AlignmentExperiment): experiment containing the aligned peakgroups
@@ -647,7 +710,7 @@ def handle_args():
     parser.add_argument('--border_option', default='median', metavar="median", help="How to determine integration border (possible values: max_width, mean, median). Max width will use the maximal possible width (most conservative since it will overestimate the background signal).")
     parser.add_argument('--dry_run', action='store_true', default=False, help="Perform a dry run only")
     parser.add_argument('--cache_in_memory', action='store_true', default=False, help="Cache data from a single run in memory")
-    parser.add_argument('--method', dest='method', default="allTrafo", help="Which method to use (allTrafo, singleShortest)")
+    parser.add_argument('--method', dest='method', default="allTrafo", help="Which method to use (singleShortestPath, singleClosestRun, other)")
     parser.add_argument('--realign_runs', dest='realign_method', default="splineR", help="How to re-align runs in retention time ('diRT': use only deltaiRT from the input file, 'linear': perform a linear regression using best peakgroups, 'splineR': perform a spline fit using R, 'splineR_external': perform a spline fit using R (start an R process using the command line, 'splinePy' use Python native spline from scikits.datasmooth (slow!), 'lowess': use Robust locally weighted regression (lowess smoother)")
     parser.add_argument('--verbosity', default=0, type=int, help="Verbosity")
     parser.add_argument('--do_single_run', default='', metavar="", help="Only do a single run")
@@ -660,8 +723,8 @@ def handle_args():
 
 def main(options):
     import time
-    if options.method == "singleShortest":
-        new_exp, multipeptides = runSingleFileImputation(options, options.peakgroups_infile, options.do_single_run)
+    if options.method in ["singleShortestPath", "singleClosestRun"]:
+        new_exp, multipeptides = runSingleFileImputation(options, options.peakgroups_infile, options.do_single_run, options.method)
     else:
         new_exp, multipeptides = run_impute_values(options, options.peakgroups_infile, options.infiles)
     if options.dry_run: return

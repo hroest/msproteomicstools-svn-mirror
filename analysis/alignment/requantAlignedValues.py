@@ -33,11 +33,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 $Maintainer: Hannes Roest$
 $Authors: Hannes Roest$
 --------------------------------------------------------------------------
-
-python analysis/alignment/feature_alignment.py --in /media/data/tmp/smallset_sorted/*.csv --out /tmp/out_new.csv --readmethod minimal  --method LocalMSTAllCluster --max_rt_diff 75 --alignment_score 0.001 --realign_runs "WeightedNearestNeighbour"  --use_dscore_filter --dscore_cutoff -2.0 --out_ids /tmp/ids --max_fdr_quality 0.20
-
-time python analysis/alignment/requantAlignedValues.py --peakgroups_infile /tmp/out_new2.csv  --out /tmp/imputed_new2.csv --do_single_run /media/data/tmp/strep_new4/hroest_K131126_023_SW_Spyo_M3_Musser_21.chrom.mzML --realign_runs "lowess" --method singleClosestRun  && diff /tmp/imputed_new2.csv imputed_expected.csv && echo "Success"
-
 """
 
 import os, sys, csv, time

@@ -201,11 +201,8 @@ class ParamEst(object):
         allpg_cnt = 0
         alldecoypg_cnt = 0
         for mpep in multipeptides:
-            print mpep
             for prgr in mpep.getPrecursorGroups():
-                print prgr
                 for pep in prgr:
-                    print pep
                     if pep.get_best_peakgroup().get_fdr_score() < target_fdr:
                         allpg_cnt += 1
                         if pep.get_decoy():

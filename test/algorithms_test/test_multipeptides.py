@@ -93,7 +93,7 @@ def help_insert(m):
     mockPrecursorGroup2 = MockPrecursorGroup([ mockPeptide2 ])
 
     peakgroup = MockPeakGroup(0.1)
-    mockPeptide3 = MockPeptide([peakgroup], "PEPTIDE_seq3")
+    mockPeptide3 = MockPeptide([peakgroup], "PEPTIDE_seq2")
     mockPrecursorGroup3 = MockPrecursorGroup([ mockPeptide3 ])
 
     m.insert("42_0", mockPrecursorGroup2)

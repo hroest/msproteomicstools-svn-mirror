@@ -179,11 +179,11 @@ class ParamEst(object):
             count = 0
             decoy = False
             for prgr in mpep.getPrecursorGroups():
-              for pep in prgr:
-                if pep.get_best_peakgroup().get_fdr_score() < target_fdr:
-                    count += 1
-                if pep.get_decoy():
-                    decoy = True
+                for pep in prgr:
+                  if pep.get_best_peakgroup().get_fdr_score() < target_fdr:
+                      count += 1
+                  if pep.get_decoy():
+                      decoy = True
             if count >= min_runs:
                 allpg_cnt += 1
             if decoy and count >= min_runs:

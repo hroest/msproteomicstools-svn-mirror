@@ -224,6 +224,11 @@ class OpenSWATH_SWATHScoringReader(SWATHScoringReader):
 
         if peptide_group_label_name in run.header_dict: 
             peptide_group_label = this_row[run.header_dict[peptide_group_label_name]]
+            # print peptide_group_label_name
+            # print peptide_group_label
+            if trgr_id.find("DECOY") != -1:
+                # print "find decoy", trgr_id
+                peptide_group_label += "DECOY"
 
         # Attributes that only need to be present in strict mode
         diff_from_assay_seconds = -1

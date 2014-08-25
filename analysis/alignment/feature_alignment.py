@@ -657,7 +657,7 @@ def main(options):
             if pg.get_fdr_score() < options.fdr_cutoff:
                 count += 1
         if count < options.nr_high_conf_exp:
-            for p in mpep.get_peptides():
+            for p in mpep.getAllPeptides():
                 p.unselect_all()
 
     # print statistics, write output

@@ -448,7 +448,7 @@ class LowessSmoothingCyLowess(LowessSmoothingBase):
             print "==================================="
 
         delta = (max(data1) - min(data1)) * 0.01
-        result = lowess(numpy.array(data1), numpy.array(data2), delta=self.delta)
+        result = lowess(numpy.array(data1), numpy.array(data2), delta=delta)
         return result
 
 class UnivarSplineNoCV:

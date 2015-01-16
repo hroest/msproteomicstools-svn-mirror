@@ -37,7 +37,7 @@ following
 
 git clone https://github.com/carljv/Will_it_Python.git
 cd Will_it_Python/MLFH/CH2/lowess\ work/
-python setup build
+python setup.py build
 sudo python setup.py install
 
 
